@@ -1,5 +1,7 @@
 # oci-zero
 
+[![Runnerless CI: slowest job](https://badges.runnerlesshq.com/github.com/pawelchcki/oci-zero/badge.svg)](https://app.runnerlesshq.com)
+
 [![CI](https://github.com/pawelchcki/oci-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/pawelchcki/oci-zero/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/oci-zero.svg)](https://crates.io/crates/oci-zero)
 [![docs.rs](https://docs.rs/oci-zero/badge.svg)](https://docs.rs/oci-zero)

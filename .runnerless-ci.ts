@@ -1,3 +1,4 @@
+import { badges, BadgeSpec } from "runnerless/v1";
 import {
   ArtifactComment, ArtifactRetention, ArtifactSpec, ArtifactStatus,
   artifacts, configuration, event, workflow,
@@ -17,6 +18,7 @@ comparison.comment = ArtifactComment.generated("comment.md", "publication.json",
 const program = workflow().publishArtifacts("complexity", comparison);
 
 export function configure(): void {
+  badges.define(new BadgeSpec("badge", "medium", "slowest-job"));
   program.configure();
   configuration.workflow("artifact-cleanup", ["pull_request"]);
 }
