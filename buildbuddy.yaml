@@ -18,5 +18,5 @@ actions:
     steps:
       - run: >-
           /var/lib/llm-cc/bin/llm-cc-coordinate
-          --repository pawelchcki/oci-zero
+          --repository no-std-rs/oci-zero
           --default-branch main

@@ -42,7 +42,7 @@ llm-cc rules explain src/layer.rs gzip-zero/tests/invariants.rs web/app.js web/t
 ## Enable reporting
 
 The BuildBuddy and Runnerless GitHub integrations must have access to
-`pawelchcki/oci-zero`. Register the repository with the BuildBuddy group
+`no-std-rs/oci-zero`. Register the repository with the BuildBuddy group
 that can use the `linux-amd64-kvm` pool and its `bazzite-host` resource.
 The shared host must have `/var/lib/llm-cc/bin/llm-cc-coordinate` installed;
 configure a read-only `GITHUB_TOKEN` BuildBuddy secret for GitHub discovery.
