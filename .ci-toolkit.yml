@@ -1,0 +1,63 @@
+api_version: ci-toolkit/v1alpha1
+
+# The trusted Runnerless program owns reconciliation. This file supplies policy.
+releases:
+  uses: toolkit.release-please@v1
+  tracks:
+    oci-zero:
+      version_file: version.txt
+      changelog_path: CHANGELOG.md
+      tag_separator: "-"
+      bump_minor_pre_major: true
+      paths: ["**"]
+      exclude:
+        - version.txt
+        - CHANGELOG.md
+        - gzip-zero/version.txt
+        - gzip-zero/CHANGELOG.md
+        - zstd-zero/version.txt
+        - zstd-zero/CHANGELOG.md
+      changelog_sections:
+        - {type: feat, section: Added, hidden: false}
+        - {type: fix, section: Fixed, hidden: false}
+        - {type: perf, section: Performance, hidden: false}
+        - {type: docs, section: Documentation, hidden: true}
+        - {type: refactor, section: Changed, hidden: true}
+        - {type: test, section: Tests, hidden: true}
+        - {type: ci, section: CI, hidden: true}
+        - {type: build, section: Build, hidden: true}
+        - {type: chore, section: Maintenance, hidden: true}
+    gzip-zero:
+      version_file: gzip-zero/version.txt
+      changelog_path: gzip-zero/CHANGELOG.md
+      tag_separator: "-"
+      bump_minor_pre_major: true
+      paths: ["gzip-zero/**"]
+      exclude: ["gzip-zero/version.txt", "gzip-zero/CHANGELOG.md"]
+      changelog_sections:
+        - {type: feat, section: Added, hidden: false}
+        - {type: fix, section: Fixed, hidden: false}
+        - {type: perf, section: Performance, hidden: false}
+        - {type: docs, section: Documentation, hidden: true}
+        - {type: refactor, section: Changed, hidden: true}
+        - {type: test, section: Tests, hidden: true}
+        - {type: ci, section: CI, hidden: true}
+        - {type: build, section: Build, hidden: true}
+        - {type: chore, section: Maintenance, hidden: true}
+    zstd-zero:
+      version_file: zstd-zero/version.txt
+      changelog_path: zstd-zero/CHANGELOG.md
+      tag_separator: "-"
+      bump_minor_pre_major: true
+      paths: ["zstd-zero/**"]
+      exclude: ["zstd-zero/version.txt", "zstd-zero/CHANGELOG.md"]
+      changelog_sections:
+        - {type: feat, section: Added, hidden: false}
+        - {type: fix, section: Fixed, hidden: false}
+        - {type: perf, section: Performance, hidden: false}
+        - {type: docs, section: Documentation, hidden: true}
+        - {type: refactor, section: Changed, hidden: true}
+        - {type: test, section: Tests, hidden: true}
+        - {type: ci, section: CI, hidden: true}
+        - {type: build, section: Build, hidden: true}
+        - {type: chore, section: Maintenance, hidden: true}
