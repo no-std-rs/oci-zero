@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/no-std-rs/oci-zero/compare/oci-zero-v0.2.1...oci-zero-v0.3.0) (2026-10-21)
+
+
+### Added
+
+* **oci-zero-web:** support anonymous OCIR browser pulls ([#28](https://github.com/no-std-rs/oci-zero/issues/28)) ([7a928ae](https://github.com/no-std-rs/oci-zero/commit/7a928ae39cc842e39f23e8add90420c3b52892ff))
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
