@@ -12,6 +12,7 @@ test.beforeEach(async ({ page }) => {
     Object.defineProperty(globalThis, "showSaveFilePicker", { value: undefined });
   });
   await page.goto("/");
+  await expect(page.locator("#repository-presets button").first()).toBeAttached();
   await expect(page.locator("#runtime-badge")).toBeHidden();
 });
 

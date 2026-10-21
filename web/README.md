@@ -12,9 +12,13 @@ Install [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/) and run:
 web/build.sh
 ```
 
-For ordinary browser mode without installing an extension, build the
-self-contained page (see [Proxyless single-file build](#proxyless-single-file-build)
-below) and open it in a dedicated, CORS-disabled Chrome profile:
+For ordinary browser mode, serve `web/` over HTTP(S) or host the self-contained
+page (see [Proxyless single-file build](#proxyless-single-file-build) below).
+Registries with compatible CORS policies work with normal browser security,
+including public OCIR repositories as described below.
+
+For registries that do not support browser CORS, open the self-contained page in
+a dedicated, CORS-disabled Chrome profile:
 
 ```console
 open -na "Google Chrome" --args \
@@ -29,8 +33,52 @@ and `--app` opens it as a standalone window. Point `--app` at any URL that hosts
 the page.
 
 This mode talks to registries directly. It sends eligible existing browser
-cookies but does not read, store, or request registry credentials. Only use the
-CORS-disabled profile for this page.
+cookies except for the explicit anonymous flows below, and does not read, store,
+or request registry credentials. Only use the CORS-disabled profile for this page.
+
+## Anonymous OCIR pulls and hidden challenges
+
+Public Oracle Cloud Container Registry repositories can be browsed with normal
+browser security. For example, enter either repository, browse its tags, and
+select the indicated version:
+
+- `fra.ocir.io/oracle/oci-cluster-autoscaler` — `1.25.0-6`
+- `iad.ocir.io/weblogick8s/weblogic-operator-tutorial-store` — `1.0`
+
+OCIR returns a Bearer challenge on a 401 but does not expose `WWW-Authenticate`
+to JavaScript through CORS. For HTTPS hosts matching `<region>.ocir.io`, the
+browser therefore falls back to `https://HOST/20180419/docker/token`, with
+`service=HOST` and `scope=repository:REPOSITORY:pull`. The repository comes from
+each request's URL, including nested paths. Catalog requests use
+`scope=registry:catalog:*`; a public repository does not imply catalog access.
+
+Other registries can opt in to a known anonymous token service with an exact
+origin configuration. Set this before browsing a repository (for example in a
+script before `app.js`, or in the page's developer console):
+
+```js
+globalThis.OCI_ZERO_ANONYMOUS_AUTH = {
+  "https://registry.example.com": {
+    realm: "https://auth.example.com/token",
+    service: "registry.example.com",
+  },
+};
+```
+
+`realm` is the token endpoint; `service` is optional. Scope is derived from each
+registry request. Configuration is in memory and applies only to that exact
+origin. A readable Bearer challenge takes precedence over the fallback; a
+readable Basic challenge still reports that private credentials are unsupported.
+Anonymous tokens are cached by endpoint, service and scope, and refreshed once
+if a cached token is rejected with 401 or 403.
+
+OCIR and explicitly configured anonymous flows use `credentials: "omit"` for
+registry and token requests, so wildcard CORS responses work without cookies.
+The registry, token service and any blob redirect still need working CORS,
+including authorization preflight. This option supplies a hidden challenge;
+it does not bypass browser CORS checks. Other registries retain the existing
+challenge discovery and cookie behavior. The same adapter and configuration
+work in the extension and the single-file build.
 
 ## Load the Chrome extension
 
@@ -52,8 +100,9 @@ field. The fixtures cover aliases, layered whiteouts, multi-platform images, and
 an OCI artifact containing files from this repository.
 
 The extension requests registry, anonymous token-service, and redirected blob
-origins one at a time. It sends eligible existing browser cookies but does not
-read, store, or request registry credentials. The manifest deliberately has no
+origins one at a time. It sends eligible existing browser cookies except for
+explicit anonymous flows, and does not read, store, or request registry
+credentials. The manifest deliberately has no
 content scripts and no `cookies` permission.
 
 The explorer presents catalog repositories as a flat, virtualized path list.
@@ -158,6 +207,15 @@ pagination and cancellation, 250-row file pagination, provisional-to-verified
 streamed listings, filtering, file download, and rollback after an integrity
 failure.
 
+`tests/auth.spec.mjs` also runs the module and single-file pages with cross-origin
+isolation enabled against a separate registry origin. Real network responses
+hide `WWW-Authenticate`, allow anonymous token requests and authorization
+preflight, and serve descriptor-verified manifests, configs and layers. The
+tests cover rejected cached tokens, scope separation, visible challenges and
+the unconfigured diagnostic, without disabling browser security or substituting
+registry responses. Set `OCI_ZERO_LIVE_OCIR=1` to additionally check public OCIR
+metadata; this optional test does not download image layers.
+
 `tests/flash.spec.mjs` covers the flasher against layout tars built by
 `tests/firmware-fixture.mjs`: the verified walk from `index.json` down to
 `firmware.bin`, rejection of a layer whose digest no longer matches its
@@ -204,8 +262,9 @@ npm run build:proxyless
 The result is `web/dist/proxyless.html`; it embeds the stylesheet, application,
 scan worker, and WebAssembly module so it can be hosted as one private object or
 opened directly from disk. Registry access depends on the target
-registry's browser CORS policy, so open it either in the Chrome extension or in
-the CORS-disabled Chrome profile shown above.
+registry's browser CORS policy. Compatible registries such as OCIR work with
+normal browser security; others need the Chrome extension or the CORS-disabled
+Chrome profile shown above.
 
 ## GitHub Pages
 

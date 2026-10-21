@@ -116,6 +116,13 @@ const packageConfigDigest = digest(packageConfig);
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
+  if (url.searchParams.has("isolated")) {
+    response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  }
+  if (url.pathname === "/scan-worker.js") {
+    response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  }
   if (url.pathname === "/healthz") return send(response, 200, "text/plain", Buffer.from("ok\n"));
   if (url.pathname === "/v2/_catalog") {
     if (url.searchParams.has("last")) {

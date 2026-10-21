@@ -355,26 +355,31 @@ function permissionPattern(origin) {
 
 async function registryFetch(url, accept = "*/*", interactive = false, signal = undefined) {
   await ensureOrigin(url, interactive);
-  let response = await rawFetch(url, { accept, signal });
+  const anonymous = anonymousBearer(url);
+  const credentials = anonymous ? "omit" : "include";
+  let response = await rawFetch(url, { accept, signal, credentials });
   if (response.status !== 401) return response;
 
   const challenge = response.headers.get("www-authenticate");
-  if (!challenge) throw new Error("Registry returned 401 without WWW-Authenticate");
-  if (!/^Bearer\s/i.test(challenge)) {
+  if (!challenge && !anonymous) {
+    throw new Error("Registry returned 401 without a readable WWW-Authenticate header. The challenge may be hidden by CORS; configure OCI_ZERO_ANONYMOUS_AUTH for this registry (see web/README.md) or use the Chrome extension.");
+  }
+  if (challenge && !/^Bearer\s/i.test(challenge)) {
     throw new Error("Registry requires private/Basic credentials; this example supports anonymous access and cookies only");
   }
-  const bearer = parseBearerChallenge(challenge);
+  const bearer = challenge ? parseBearerChallenge(challenge) : anonymous;
   const cacheKey = `${bearer.realm}|${bearer.service || ""}|${bearer.scope || ""}`;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const cached = state.tokens.get(cacheKey);
     if (cached && cached.expiresAt <= Date.now()) state.tokens.delete(cacheKey);
-    let token = cached?.expiresAt > Date.now() ? cached.token : null;
+    const usingCached = cached?.expiresAt > Date.now();
+    let token = usingCached ? cached.token : null;
     if (!token) {
       const tokenUrl = new URL(bearer.realm);
       if (bearer.service) tokenUrl.searchParams.set("service", bearer.service);
       if (bearer.scope) tokenUrl.searchParams.set("scope", bearer.scope);
       await ensureOrigin(tokenUrl);
-      const tokenResponse = await rawFetch(tokenUrl, { accept: "application/json", signal });
+      const tokenResponse = await rawFetch(tokenUrl, { accept: "application/json", signal, credentials });
       if (!tokenResponse.ok) throw new TokenServiceError(tokenResponse.status, await tokenServiceDetail(tokenResponse));
       const body = await tokenResponse.json();
       token = body.token || body.access_token;
@@ -382,19 +387,39 @@ async function registryFetch(url, accept = "*/*", interactive = false, signal = 
       const expiresAt = Date.now() + Math.max(30, Number(body.expires_in || 300) - 15) * 1000;
       state.tokens.set(cacheKey, { token, expiresAt });
     }
-    response = await rawFetch(url, { accept, authorization: `Bearer ${token}`, signal });
-    if (response.status !== 403 || !cached) {
+    response = await rawFetch(url, { accept, authorization: `Bearer ${token}`, signal, credentials });
+    if (![401, 403].includes(response.status) || !usingCached) {
       if (response.status === 401) state.tokens.delete(cacheKey);
       return response;
     }
     // Some registries revoke a token before its advertised expiry. Refresh it
-    // once before surfacing the 403, without retrying genuine ACL failures.
+    // once before surfacing the 401/403, without retrying genuine ACL failures.
     state.tokens.delete(cacheKey);
   }
   return response;
 }
 
-async function rawFetch(url, { accept, authorization, signal } = {}) {
+function anonymousBearer(input) {
+  const url = new URL(input);
+  // Exact origins let a host opt in without affecting any other registry.
+  let config = globalThis.OCI_ZERO_ANONYMOUS_AUTH?.[url.origin];
+  if (!config && url.protocol === "https:" && /^[a-z0-9-]+\.ocir\.io$/.test(url.hostname)) {
+    config = {
+      realm: new URL("/20180419/docker/token", url.origin).href,
+      service: url.hostname,
+    };
+  }
+  if (!config) return null;
+  // Infer scope from this request, not the currently selected repository: tag
+  // resolution and pagination may still have requests in flight after navigation.
+  const repository = url.pathname.match(/^\/v2\/(.+)\/(?:tags\/list|manifests\/[^/]+|blobs\/[^/]+)$/)?.[1];
+  const scope = repository ? `repository:${decodeURIComponent(repository)}:pull`
+    : url.pathname === "/v2/_catalog" ? "registry:catalog:*" : null;
+  if (!scope) return null;
+  return { realm: config.realm, service: config.service, scope };
+}
+
+async function rawFetch(url, { accept, authorization, signal, credentials = "include" } = {}) {
   state.redirectOrigin = null;
   const headers = new Headers();
   if (accept) headers.set("Accept", accept);
@@ -402,7 +427,7 @@ async function rawFetch(url, { accept, authorization, signal } = {}) {
   try {
     return await fetch(url, {
       headers,
-      credentials: "include",
+      credentials,
       redirect: "follow",
       signal,
     });

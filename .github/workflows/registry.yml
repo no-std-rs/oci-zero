@@ -5,8 +5,9 @@ name: Static registry
 # the distribution spec's read path resolves against plain objects — see
 # tools/publish-static-registry.sh for the shape and why there is no write path.
 #
-# It exists because no public registry sends `Access-Control-Allow-Origin`, so the proxyless
-# page cannot fetch a manifest from GHCR, Docker Hub or ECR Public from inside a browser.
+# Many public registries, including GHCR, Docker Hub and ECR Public, do not expose the
+# CORS headers the proxyless page needs. OCIR is an exception with an explicit anonymous
+# token endpoint (see web/README.md); this registry provides a controlled CORS fixture.
 # The CORS assertions at the end are therefore the point of this workflow, not a detail.
 
 on:
