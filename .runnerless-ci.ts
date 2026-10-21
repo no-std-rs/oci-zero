@@ -20,6 +20,7 @@ const program = workflow()
   .releasePlease();
 
 export function configure(): void {
+  configuration.titlePolicy();
   badges.define(new BadgeSpec("badge", "medium", "slowest-job"));
   program.configure();
   configuration.workflow("artifact-cleanup", ["pull_request"]);
