@@ -15,7 +15,9 @@ const comparison = new ArtifactSpec("public-artifacts",
 comparison.retention = new ArtifactRetention(14, 5);
 comparison.comment = ArtifactComment.generated("comment.md", "publication.json", 24576);
 
-const program = workflow().publishArtifacts("complexity", comparison);
+const program = workflow()
+  .publishArtifacts("complexity", comparison)
+  .releasePlease();
 
 export function configure(): void {
   badges.define(new BadgeSpec("badge", "medium", "slowest-job"));

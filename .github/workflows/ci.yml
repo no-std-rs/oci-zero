@@ -207,8 +207,12 @@ jobs:
           cache-bin: false
       # Package together so Cargo can resolve unpublished workspace versions
       # from the packaged crates when verifying a release PR.
+      - name: Verify release preparation
+        run: |
+          python3 -m unittest discover -s tools -p test_release.py
+          python3 tools/prepare-release.py "oci-zero-v$(cat version.txt)"
       - name: Package published crates
-        run: cargo package -p gzip-zero -p zstd-zero -p oci-zero
+        run: cargo package --locked --allow-dirty -p gzip-zero -p zstd-zero -p oci-zero
 
   # Preserve the required check name and fail if any parallel Rust job fails.
   quality:
