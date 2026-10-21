@@ -26,8 +26,8 @@ title produces a wrong version bump and a bad changelog entry.
 | `feat`     | New user-facing capability                | minor bump               |
 | `fix`      | Bug fix                                    | patch bump               |
 | `perf`     | Performance improvement                   | patch bump               |
-| `refactor` | Behaviour-preserving code change          | no release               |
-| `docs`     | Documentation only                        | no release               |
+| `refactor` | Behaviour-preserving code change          | no release, in changelog |
+| `docs`     | Documentation only                        | no release, in changelog |
 | `test`     | Tests only                                | no release               |
 | `ci`       | CI / workflow changes                     | no release               |
 | `build`    | Build system or dependency changes        | no release               |
@@ -35,10 +35,10 @@ title produces a wrong version bump and a bad changelog entry.
 
 A `feat!:` / `fix!:` (or `BREAKING CHANGE:` footer) triggers a breaking bump.
 
-This table is enforced by `.ci-toolkit.yml`: only `feat`, `fix`, and `perf` are
-visible release sections. Breaking changes and explicit `Release-As` footers also
-trigger releases. Internal commit types stay hidden so a CI-only change does not
-publish a new `oci-zero`. See [RELEASING.md](RELEASING.md) for the tracked platform gaps.
+This table is enforced by `.ci-toolkit.yml`: `release_commit_types` allows only
+`feat`, `fix`, and `perf` to trigger ordinary releases. Changelog visibility is
+independent, so docs/refactor appear in notes without triggering releases alone.
+Breaking changes and explicit `Release-As` footers also trigger releases.
 
 ### Scopes
 
@@ -57,25 +57,26 @@ chore: bump miniz_oxide to 0.9.1
 feat(oci-zero)!: rename Decoder::decode to Decoder::step
 ```
 
-PR titles are enforced in CI by `.github/workflows/pr-title.yml`.
+PR titles are enforced by `configuration.titlePolicy()` in `.runnerless-ci.ts`.
 
 ## Releasing
 
 Releases are owned by the trusted `.runnerless-ci.ts` program:
 
-1. Runnerless opens an independent release PR for each affected track in
-   `.ci-toolkit.yml`, updating its `version.txt` and changelog.
-2. Merging a release PR causes Runnerless to create its existing `<crate>-vX.Y.Z`
-   tag and GitHub Release. Release dependent decoder crates before `oci-zero`.
-3. `publish-release.yml` verifies the published release and main ancestry, renders
-   Cargo manifests and the lockfile from the three independent version files, and
-   publishes only that release's crate using crates.io OIDC trusted publishing.
+1. The native `strategy: cargo` groups the independently versioned crates into one
+   release PR, updating Cargo manifests, dependency requirements, Cargo.lock,
+   version files and changelogs together. Dependents receive required version bumps.
+2. Merging that PR causes Runnerless to create each changed crate's existing
+   `<crate>-vX.Y.Z` tag and GitHub Release, in dependency order.
+3. `publish-release.yml` verifies the immutable release identity and ancestry,
+   waits for dependency publication, verifies distributable digests, and publishes
+   only the selected crate with crates.io OIDC. Matching immutable uploads are
+   reconciled on retry; conflicting bytes fail.
 
-The version files are the release authority. Run `tools/prepare-release.py` via
-Python before packaging a release; CI checks the same preparation. Do not manually
-change a Cargo version as a substitute for updating its version file. Private
-workspace package versions remain unchanged. Enrollment and recovery are described
-in [RELEASING.md](RELEASING.md).
+The native release PR keeps manifest and version-file versions consistent. No
+repository preparation hook or generated dirty build inputs are needed. Private
+workspace package versions remain unchanged. CI packages the public crates with
+`--locked`. Enrollment and recovery are described in [RELEASING.md](RELEASING.md).
 
 Do not run `cargo publish` by hand; let the pipeline do it.
 
