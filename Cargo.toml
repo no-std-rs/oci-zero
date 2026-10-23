@@ -1,68 +1,66 @@
-[package]
-name = "oci-zero"
+[dependencies.base64ct]
+default-features = false
+version = "=1.6.0"
+
+[dependencies.derive_more]
+workspace = true
+
+[dependencies.embedded-io]
+default-features = false
+optional = true
+version = "0.7"
+
+[dependencies.embedded-io-async]
+default-features = false
+optional = true
+version = "0.7"
+
+[dependencies.embedded-nal-async]
+optional = true
+version = "0.9"
+
+[dependencies.gzip-zero]
+optional = true
+path = "gzip-zero"
+version = "0.1.1"
+
+[dependencies.mbedtls-rs]
+default-features = false
+features = ["tls"]
+optional = true
+version = "0.1"
+
+[dependencies.reqwless]
+default-features = false
+optional = true
+version = "0.14"
+
+[dependencies.serde]
+features = ["derive"]
+optional = true
+version = "1"
+
+[dependencies.serde_json]
+optional = true
+version = "1"
+
+[dependencies.sha2]
+default-features = false
+version = "0.10"
+
+[dependencies.zstd-zero]
+optional = true
+path = "zstd-zero"
 version = "0.2.1"
-edition = "2021"
-rust-version = "1.75"
-description = "A no-std, allocation-free streaming core for OCI registries"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/pawelchcki/oci-zero"
-readme = "README.md"
-keywords = ["oci", "containers", "registry", "no-std", "streaming"]
-categories = ["no-std", "network-programming", "parser-implementations"]
-# The ESP32-C3 firmware is a separate workspace with its own target, toolchain
-# and `[patch.crates-io]` pins. Excluding it from the *package* as well keeps it
-# out of the published `oci-zero` .crate.
-exclude = ["examples/esp32c3-ota"]
-
-[workspace]
-members = ["gzip-zero", "no-std-extract", "tools/matter-qr", "web", "zstd-zero", "examples/registry-demo"]
-# Not a member: it targets riscv32imc-unknown-none-elf and patches esp-hal to a
-# git revision, neither of which may leak into the hosted crates.
-exclude = ["examples/esp32c3-ota"]
-resolver = "2"
-
-[workspace.dependencies]
-derive_more = { version = "1.0.0", default-features = false, features = ["display", "from"] }
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-
-[features]
-default = []
-docker-credentials = ["base64ct/alloc", "dep:serde", "dep:serde_json"]
-gzip = ["dep:gzip-zero"]
-reqwless = [
-    "dep:embedded-io",
-    "dep:embedded-io-async",
-    "dep:embedded-nal-async",
-    "dep:reqwless",
-]
-tls = ["reqwless", "dep:mbedtls-rs"]
-zstd = ["dep:zstd-zero"]
-
-[dependencies]
-derive_more = { workspace = true }
-# Keep the allocation-free Base64 codec compatible with Rust 1.75.
-base64ct = { version = "=1.6.0", default-features = false }
-embedded-io = { version = "0.7", default-features = false, optional = true }
-embedded-io-async = { version = "0.7", default-features = false, optional = true }
-embedded-nal-async = { version = "0.9", optional = true }
-gzip-zero = { version = "0.1.1", path = "gzip-zero", optional = true }
-mbedtls-rs = { version = "0.1", default-features = false, features = ["tls"], optional = true }
-reqwless = { version = "0.14", default-features = false, optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
-sha2 = { version = "0.10", default-features = false }
-zstd-zero = { version = "0.2.1", path = "zstd-zero", optional = true }
 
 [dev-dependencies]
-ureq = { version = "=2.9.7", default-features = false, features = ["tls"] }
-# Keep ureq's transitive dependencies compatible with the crate's Rust 1.75 MSRV.
 url = "=2.4.1"
 zeroize = "=1.8.1"
+
+[dev-dependencies.ureq]
+default-features = false
+features = ["tls"]
+version = "=2.9.7"
 
 [[example]]
 name = "extract_file"
@@ -71,3 +69,40 @@ required-features = ["zstd"]
 [[example]]
 name = "download_metadata"
 required-features = ["docker-credentials"]
+
+[features]
+default = []
+docker-credentials = ["base64ct/alloc", "dep:serde", "dep:serde_json"]
+gzip = ["dep:gzip-zero"]
+reqwless = ["dep:embedded-io", "dep:embedded-io-async", "dep:embedded-nal-async", "dep:reqwless"]
+tls = ["reqwless", "dep:mbedtls-rs"]
+zstd = ["dep:zstd-zero"]
+
+[package]
+categories = ["no-std", "network-programming", "parser-implementations"]
+description = "A no-std, allocation-free streaming core for OCI registries"
+edition = "2021"
+exclude = ["examples/esp32c3-ota"]
+keywords = ["oci", "containers", "registry", "no-std", "streaming"]
+license = "MIT OR Apache-2.0"
+name = "oci-zero"
+readme = "README.md"
+repository = "https://github.com/pawelchcki/oci-zero"
+rust-version = "1.75"
+version = "0.3.0"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+exclude = ["examples/esp32c3-ota"]
+members = ["gzip-zero", "no-std-extract", "tools/matter-qr", "web", "zstd-zero", "examples/registry-demo"]
+resolver = "2"
+
+[workspace.dependencies.derive_more]
+default-features = false
+features = ["display", "from"]
+version = "1.0.0"
