@@ -68,10 +68,11 @@ Releases are owned by the trusted `.runnerless-ci.ts` program:
    version files and changelogs together. Dependents receive required version bumps.
 2. Merging that PR causes Runnerless to create each changed crate's existing
    `<crate>-vX.Y.Z` tag and GitHub Release, in dependency order.
-3. `publish-release.yml` verifies the immutable release identity and ancestry,
-   waits for dependency publication, verifies distributable digests, and publishes
-   only the selected crate with crates.io OIDC. Matching immutable uploads are
-   reconciled on retry; conflicting bytes fail.
+3. `publish-release.yml` verifies immutable release identity and ancestry, waits
+   for dependency publication, and captures the selected crate against a loopback
+   registry. It attaches the verified upload body and SHA256SUMS without a crates.io
+   credential. Runnerless performs the registry write through `packages.crates`;
+   matching immutable bytes reconcile on retry and conflicting bytes fail.
 
 The native release PR keeps manifest and version-file versions consistent. No
 repository preparation hook or generated dirty build inputs are needed. Private

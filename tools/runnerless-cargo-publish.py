@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Delegated Cargo OIDC release job; copy this reviewed helper into the adopted repo.
+"""Prepare immutable Cargo upload assets for the Runnerless registry publisher.
 
-No token is needed for select/package/reconcile. Only publish reads the temporary
-CARGO_REGISTRY_TOKEN environment variable; it is never printed or put in argv.
+GitHub Actions verifies and captures bytes without a crates.io credential. Only
+Runnerless may perform the registry write; this helper attaches GitHub assets.
 """
 import argparse
 from contextlib import closing, contextmanager
@@ -79,6 +79,8 @@ def select(repository, tag, allowed):
     relation = json.loads(run("gh", "api", base + "/compare/" + revision + "..." + tip))
     if relation.get("status") not in ("ahead", "identical"):
         raise ValueError("release_not_in_default_history")
+    if run("git", "status", "--porcelain", "--untracked-files=normal"):
+        raise ValueError("release_checkout_dirty")
     metadata = json.loads(run("cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"))
     matches = [p for p in metadata["packages"] if p["name"] == name and p["version"] == version and p["id"] in metadata["workspace_members"]]
     if len(matches) != 1:
@@ -209,13 +211,51 @@ def wait_dependencies(package, metadata, visited=None):
             time.sleep(remaining(10, wait_until, "dependency_not_visible_retry_after_dependency_release"))
 
 
+def attach(repository, tag, name, version, directory):
+    """Reconcile immutable GitHub assets before any upload; never publish to crates.io."""
+    files = [Path(directory) / f"{name}-{version}.cargo-upload", Path(directory) / "SHA256SUMS"]
+    if any(not path.is_file() or not 0 < path.stat().st_size <= 32 * 1024 * 1024 for path in files):
+        raise ValueError("prepared_release_asset_missing_or_oversized")
+    expected = hashlib.sha256(files[0].read_bytes()).hexdigest()
+    if files[1].read_text() != f"{expected}  {files[0].name}\n":
+        raise ValueError("prepared_release_checksums_mismatch")
+    release = json.loads(run("gh", "api", "repos/" + repository + "/releases/tags/" + tag))
+    if release.get("tag_name") != tag or release.get("draft") is not False or release.get("prerelease") is not False or not release.get("published_at"):
+        raise ValueError("stable_published_release_required")
+    existing = {}
+    for asset in release.get("assets", []):
+        if asset["name"] in existing:
+            raise ValueError("duplicate_release_asset")
+        existing[asset["name"]] = asset
+    missing = []
+    for path in files:
+        asset = existing.get(path.name)
+        if asset is None:
+            missing.append(str(path))
+            continue
+        digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        if asset.get("size") != path.stat().st_size:
+            raise ValueError("immutable_release_asset_conflict")
+        observed = asset.get("digest")
+        if observed is None:
+            retained = subprocess.check_output(["gh", "api", f"repos/{repository}/releases/assets/{asset['id']}", "--header", "Accept: application/octet-stream"], timeout=remaining(180))
+            observed = "sha256:" + hashlib.sha256(retained).hexdigest()
+        if observed != digest:
+            raise ValueError("immutable_release_asset_conflict")
+    if missing:
+        subprocess.run(["gh", "release", "upload", tag, *missing, "--repo", repository], check=True, timeout=remaining(180))
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=["package", "publish"])
+    parser.add_argument("phase", choices=["package", "capture", "attach"])
     parser.add_argument("--repository", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--crate", action="append", required=True)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.phase != "package" and args.output is None:
+        parser.error("capture and attach require --output")
     global DEADLINE
     now = time.time()
     DEADLINE = float(os.environ.get("RUNNERLESS_PUBLISH_DEADLINE", now + 18 * 60))
@@ -231,30 +271,15 @@ def main():
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:
             print("publish=" + str(publish).lower(), file=output)
             print("deadline=" + str(DEADLINE), file=output)
+    elif args.phase == "capture":
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cargo_capture", Path(__file__).with_name("runnerless-cargo-capture.py"))
+        capture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capture)
+        capture.capture(name, version, archive, args.output, remaining(600))
     else:
-        if not archive.is_file():
-            raise ValueError("verified_package_missing")
-        if reconcile(name, version, archive):
-            return
-        if not os.environ.get("CARGO_REGISTRY_TOKEN"):
-            raise ValueError("oidc_exchange_required_check_crates_io_publisher_configuration")
-        try:
-            outcome = subprocess.run(["cargo", "publish", "--locked", "--registry", "crates-io", "-p", name], timeout=remaining(600))
-            upload_failed = outcome.returncode != 0
-        except subprocess.TimeoutExpired:
-            # Killing Cargo cannot retract a request the registry already accepted.
-            # Reconcile the uncertain write while the shared budget still permits it.
-            upload_failed = True
-        # Never overwrite a version; an interrupted successful upload must converge
-        # on its verified digest before another attempt can upload anything.
-        visibility_error = "cargo_upload_failed_reconcile_before_retry" if upload_failed else "registry_visibility_timeout_retry_same_revision"
-        reconcile_until = time.time() + 120
-        for attempt in range(13):
-            if reconcile(name, version, archive, deadline=reconcile_until, timeout_reason=visibility_error):
-                return
-            if attempt < 12:
-                time.sleep(remaining(10, reconcile_until, visibility_error))
-        raise RuntimeError(visibility_error)
+        attach(args.repository, args.tag, name, version, args.output)
+
 
 
 if __name__ == "__main__":

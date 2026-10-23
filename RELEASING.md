@@ -27,46 +27,80 @@ in notes without triggering a release. Breaking changes and `Release-As` retain
 their release semantics. Breaking pre-1.0 changes advance the minor version.
 
 After a release PR merges, Runnerless creates tags and GitHub Releases for changed
-packages in dependency order. Independently triggered `publish-release.yml` jobs
-use `tools/runnerless-cargo-publish.py`, copied from the supported my-infra recipe
-at `335d35f2`. The job:
+packages in dependency order. `publish-release.yml` prepares one selected crate:
 
-1. Verifies the repository, allowlisted stable crate tag, exact local and remote
-   tag revision, published release, current default-branch ancestry and Cargo identity.
-2. Waits for local dependencies on crates.io. Dependencies tagged at the same
-   revision must match the archive digest produced by the pinned toolchain.
-3. Packages with Cargo **1.95.0**, `--locked` and explicit registry `crates-io`.
-4. Skips credential exchange/upload if the existing immutable version has matching
-   bytes; otherwise exchanges GitHub OIDC and publishes the selected crate.
-5. Reconciles a possibly interrupted upload against the sparse-index digest.
-   Conflicting immutable bytes are never overwritten.
+1. Checks out preparation tools from the workflow's pinned revision, then checks
+   out the immutable release tag. This also lets current tools prepare an older
+   release without modifying its source or tag.
+2. Verifies the repository, stable allowlisted crate tag, local/remote revision,
+   published release, current default-branch ancestry, clean checkout and Cargo
+   identity. Dependencies must already be visible on crates.io; same-revision
+   dependencies must match the pinned-toolchain archive digest.
+3. Packages with Cargo **1.95.0**, `--locked` and registry `crates-io`.
+4. Captures Cargo's upload body against a loopback registry that never forwards
+   writes. The embedded archive must match the verified package byte for byte.
+   Only the selected crate is hidden in the local sparse index; independently
+   versioned dependencies retain their published versions.
+5. Attaches `<crate>-<version>.cargo-upload` and `SHA256SUMS`. Existing assets are
+   checked before any write. Matching bytes are reused; conflicts are refused.
 
-Dependency waits are bounded to five minutes each; upload reconciliation to two
-minutes. Both phases share an 18-minute deadline inside a 20-minute job. A retry
-starts a fresh budget and reconciles already-published bytes first. Retry the exact
-tag with the same pinned toolchain. Do not edit the toolchain or release source
-between retries of an already-published version.
+The preparation job has GitHub release-asset write permission, no OIDC permission,
+and no crates.io credential. **Runnerless alone publishes to crates.io.** Its
+trusted program stages `packages.crates` only after a successful preparation run
+whose immutable revision matches the published release. Separate operations retain
+each crate's version/tag, and core publication depends on any decoder operations
+staged in the same delivery. Completion checks require actual success and
+`failed: false`; build completion alone does not establish publication.
 
-## Enrollment and recovery
+Dependency waits are bounded to five minutes each. The preparation phases share an
+18-minute deadline inside a 20-minute job. Retries use the same pinned toolchain
+and immutable release source. No manifest rewrite or `--allow-dirty` is used.
 
-Runnerless adoption must remain active for `no-std-rs/oci-zero`. For **each of
-oci-zero, gzip-zero and zstd-zero**, crates.io's Trusted Publisher must specify
-owner `no-std-rs`, repository `oci-zero`, workflow `publish-release.yml`, and **no
-environment name**. This migration preserves that existing workflow identity; it
-does not provision or verify external publisher settings. Verify enrollment before
-merging a generated release PR. No durable registry token, release App or new
-GitHub environment is introduced.
+## Configure the Runnerless destination
 
-To replay an interrupted existing stable release, dispatch `Publish Runnerless
-Cargo release` with its exact tag. A dependency visibility failure means checking
-its tag's job before retrying the dependent. An immutable digest conflict requires
-investigating source/toolchain differences and choosing a new version; an unavailable
-registry is never treated as a missing version.
+Keep `no-std-rs/oci-zero` adopted in Runnerless. In its **Package publishing** panel,
+add a **crates.io** destination containing only `oci-zero`, `gzip-zero` and
+`zstd-zero`. Use the following exact package tag prefixes:
 
-Platform source support and successful self-deployment were verified in
-[my-infra#283](https://github.com/pawelchcki/my-infra/pull/283).
-[my-infra#277](https://github.com/pawelchcki/my-infra/issues/277) is closed.
+| Package | Tag prefix |
+|---|---|
+| oci-zero | `oci-zero-v` |
+| gzip-zero | `gzip-zero-v` |
+| zstd-zero | `zstd-zero-v` |
+
+Select a repository token or an explicitly configured organization token that can
+publish these packages, store it through Runnerless's write-only credential form,
+and enable Production. Never put credentials in chat, workflow configuration,
+arguments, release assets or source. This pipeline does not use crates.io's GitHub
+Trusted Publisher enrollment. Destination readiness and actual registry acceptance
+must be checked separately from source/CI readiness.
+
+## Recover an existing release
+
+For a normal release whose tag contains this workflow, dispatch **Prepare Cargo
+release for Runnerless** at that same tag with the same `tag` input. A successful
+completion hands publication to Runnerless after the assets are attached.
+
+For the already-created `oci-zero-v0.3.0` (revision
+`b2d990a4ad0d553b1e7f4c34d4b4ee09760ae217`), dispatch the current preparation
+workflow from **main**, selecting that existing tag. It retains current tools but
+packages the original tag's clean source. After its upload assets are verified,
+re-run the existing successful **CI** workflow at that exact release revision to
+hand off to the new trusted Runnerless program. The recovery branch accepts only
+successful default-branch CI for an older revision whose tag still resolves to
+that exact head and belongs to current default-branch history. Ordinary current-main
+CI is not an asset-completion signal. Do not rerun the earlier direct-publisher
+workflow attempt; it retains the old workflow definition.
+
+A dependency visibility failure requires checking its own tag's preparation and
+Runnerless publication before retrying the dependent. An immutable digest conflict
+requires investigation; no existing release, tag or registry version is overwritten.
+Only crates whose versions actually changed are released. This root release keeps
+`gzip-zero` 0.1.1 and `zstd-zero` 0.2.1 unchanged.
+
 [my-infra#275](https://github.com/pawelchcki/my-infra/issues/275) and
-[my-infra#276](https://github.com/pawelchcki/my-infra/issues/276) retain the separate
-actual three-crate registry-release acceptance. Adopting this strategy does not
-claim that a registry release or publisher enrollment has occurred.
+[my-infra#276](https://github.com/pawelchcki/my-infra/issues/276) retain separate
+workspace/OIDC acceptance requirements. This Runnerless-only publication choice
+does not claim that an OIDC exchange occurred or that all three crate versions
+changed. Actual destination configuration and publication remain operational
+prerequisites until verified.
