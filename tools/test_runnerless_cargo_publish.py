@@ -13,7 +13,7 @@ spec = importlib.util.spec_from_file_location("publisher", Path(__file__).with_n
 publisher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publisher)
 
-class CargoOidcTest(unittest.TestCase):
+class CargoPreparationTest(unittest.TestCase):
     def setUp(self):
         publisher.DEADLINE = None
 
@@ -55,7 +55,7 @@ class CargoOidcTest(unittest.TestCase):
     def test_binds_release_to_repository_stable_tag_manifest_and_exact_revision(self):
         sha = "a" * 40
         responses = [json.dumps({"tag_name": "gzip-zero-v0.2.0", "draft": False, "prerelease": False}), sha, sha, json.dumps({"sha": sha}),
-                     json.dumps({"default_branch": "main"}), json.dumps({"sha": "b" * 40}), json.dumps({"status": "ahead"}), json.dumps({"packages": [{"name": "gzip-zero", "version": "0.2.0", "id": "p", "publish": None}], "workspace_members": ["p"]})]
+                     json.dumps({"default_branch": "main"}), json.dumps({"sha": "b" * 40}), json.dumps({"status": "ahead"}), "", json.dumps({"packages": [{"name": "gzip-zero", "version": "0.2.0", "id": "p", "publish": None}], "workspace_members": ["p"]})]
         with patch.dict(os.environ, GITHUB_REPOSITORY="fixture/repo"), patch.object(publisher, "run", side_effect=responses) as commands:
             name, version, _, _ = publisher.select("fixture/repo", "gzip-zero-v0.2.0", ["gzip-zero"])
             self.assertEqual((name, version), ("gzip-zero", "0.2.0"))
@@ -83,26 +83,36 @@ class CargoOidcTest(unittest.TestCase):
             archive = Path(temporary) / "package" / "Pkg-1.0.0.crate"
             archive.parent.mkdir()
             archive.write_bytes(b"archive")
-            # A truthy sentinel tests credential presence without a token fixture.
-            with patch.object(publisher, "select", return_value=("Pkg", "1.0.0", {}, {"target_directory": temporary})), patch.object(publisher, "reconcile", side_effect=[False, True]), patch.object(publisher.subprocess, "run") as command, patch.object(publisher.os, "environ", {"CARGO_REGISTRY_TOKEN": True}), patch("sys.argv", ["publish.py", "publish", "--repository", "fixture/repo", "--tag", "Pkg-v1.0.0", "--crate", "Pkg"]):
+            output = Path(temporary) / "outputs"
+            with patch.object(publisher, "select", return_value=("Pkg", "1.0.0", {"dependencies": []}, {"target_directory": temporary,"packages":[]})), patch.object(publisher, "reconcile", return_value=False), patch.object(publisher.subprocess, "run") as command, patch.dict(os.environ, GITHUB_OUTPUT=str(output)), patch("sys.argv", ["prepare.py", "package", "--repository", "fixture/repo", "--tag", "Pkg-v1.0.0", "--crate", "Pkg"]):
                 publisher.main()
-                self.assertEqual(command.call_args.args[0], ["cargo", "publish", "--locked", "--registry", "crates-io", "-p", "Pkg"])
+                self.assertEqual(command.call_args.args[0], ["cargo", "package", "--locked", "--registry", "crates-io", "-p", "Pkg"])
+                self.assertIn("publish=true", output.read_text())
 
-    def test_timed_out_upload_reconciles_before_retrying(self):
+    def test_attachment_reconciles_matching_bytes_before_any_write(self):
         with tempfile.TemporaryDirectory() as temporary:
-            archive = Path(temporary) / "package" / "Pkg-1.0.0.crate"
-            archive.parent.mkdir()
-            archive.write_bytes(b"archive")
-            for published in [True, False]:
-                with self.subTest(published=published), patch.object(publisher, "select", return_value=("Pkg", "1.0.0", {}, {"target_directory": temporary})), patch.object(publisher, "reconcile", side_effect=[False, True] if published else None, return_value=False) as reconcile, patch.object(publisher.subprocess, "run", side_effect=publisher.subprocess.TimeoutExpired("cargo", 600)) as command, patch.object(publisher.time, "sleep"), patch.object(publisher.os, "environ", {"CARGO_REGISTRY_TOKEN": True}), patch("sys.argv", ["publish.py", "publish", "--repository", "fixture/repo", "--tag", "Pkg-v1.0.0", "--crate", "Pkg"]):
-                    if published:
-                        publisher.main()
-                        self.assertEqual(reconcile.call_count, 2)
-                    else:
-                        with self.assertRaisesRegex(RuntimeError, "cargo_upload_failed_reconcile_before_retry"):
-                            publisher.main()
-                        self.assertEqual(reconcile.call_count, 14)
-                    command.assert_called_once()
+            directory = Path(temporary)
+            asset = directory / "Pkg-1.0.0.cargo-upload"
+            asset.write_bytes(b"verified cargo body")
+            (directory / "SHA256SUMS").write_text(hashlib.sha256(asset.read_bytes()).hexdigest() + "  " + asset.name + "\n")
+            files = [asset, directory / "SHA256SUMS"]
+            assets = [{"id": n, "name": f.name, "size": f.stat().st_size,
+                       "digest": "sha256:" + hashlib.sha256(f.read_bytes()).hexdigest()} for n,f in enumerate(files)]
+            release = {"tag_name":"Pkg-v1.0.0","draft":False,"prerelease":False,"published_at":"2026-10-23T00:00:00Z","assets":assets}
+            with patch.object(publisher, "run", return_value=json.dumps(release)), patch.object(publisher.subprocess, "run") as upload:
+                publisher.attach("fixture/repo", "Pkg-v1.0.0", "Pkg", "1.0.0", directory)
+                upload.assert_not_called()
+            # A missing manifest can be added after an interrupted first attachment.
+            release["assets"] = assets[:1]
+            with patch.object(publisher, "run", return_value=json.dumps(release)), patch.object(publisher.subprocess, "run") as upload:
+                publisher.attach("fixture/repo", "Pkg-v1.0.0", "Pkg", "1.0.0", directory)
+                self.assertEqual(upload.call_args.args[0], ["gh", "release", "upload", "Pkg-v1.0.0", str(files[1]), "--repo", "fixture/repo"])
+            # Preflight a later conflicting asset before uploading any earlier missing one.
+            release["assets"] = [dict(assets[1], digest="sha256:" + "0" * 64)]
+            with patch.object(publisher, "run", return_value=json.dumps(release)), patch.object(publisher.subprocess, "run") as upload:
+                with self.assertRaisesRegex(ValueError, "immutable_release_asset_conflict"):
+                    publisher.attach("fixture/repo", "Pkg-v1.0.0", "Pkg", "1.0.0", directory)
+                upload.assert_not_called()
 
     def response(self, status, chunks):
         response = SimpleNamespace(status=status, read1=Mock(side_effect=chunks))
@@ -123,7 +133,7 @@ class CargoOidcTest(unittest.TestCase):
             self.assertEqual(publisher.remaining(30, deadline=105), 5)
             publisher.DEADLINE = 99
             with self.assertRaisesRegex(RuntimeError, "release_deadline_exhausted"):
-                publisher.run("cargo", "publish")
+                publisher.run("cargo", "package")
 
     def test_registry_outage_is_not_absent_and_redirects_are_refused(self):
         for code, expected in [(404, None), (503, RuntimeError), (302, RuntimeError)]:
@@ -165,6 +175,60 @@ class CargoOidcTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "release_deadline_exhausted"):
                 publisher.index("gzip-zero", "0.2.0")
             self.assertEqual([call.args[0] for call in connection.sock.settimeout.call_args_list], [10, 10, 6, 2])
+
+
+
+capture_spec = importlib.util.spec_from_file_location("cargo_capture", Path(__file__).with_name("runnerless-cargo-capture.py"))
+capture = importlib.util.module_from_spec(capture_spec)
+capture_spec.loader.exec_module(capture)
+
+class CargoCaptureTest(unittest.TestCase):
+    def body(self, archive, name="oci-zero", version="0.3.0"):
+        import struct
+        metadata = json.dumps({"name":name,"vers":version,"deps":[],"features":{}}).encode()
+        return struct.pack("<I",len(metadata)) + metadata + struct.pack("<I",len(archive)) + archive
+
+    def test_capture_refuses_another_package_version_or_archive(self):
+        archive=b"canonical crate"
+        body=self.body(archive)
+        expected=hashlib.sha256(archive).hexdigest()
+        capture.parse_upload(body,"oci-zero","0.3.0",expected)
+        for name,version,digest in [("gzip-zero","0.3.0",expected),("oci-zero","0.4.0",expected),("oci-zero","0.3.0","0"*64)]:
+            with self.assertRaises(ValueError):
+                capture.parse_upload(body,name,version,digest)
+        for truncated in [body[:4],body[:-1],body+b"extra"]:
+            with self.assertRaises(ValueError):
+                capture.parse_upload(truncated,"oci-zero","0.3.0",expected)
+
+    def test_actual_loopback_capture_keeps_independent_version_and_canonical_archive(self):
+        import urllib.request
+        with tempfile.TemporaryDirectory() as temporary:
+            archive=Path(temporary)/"oci-zero-0.3.0.crate"
+            archive.write_bytes(b"canonical crate")
+            output=Path(temporary)/"assets"
+            def cargo(command, **kwargs):
+                self.assertIn("--locked",command)
+                self.assertNotIn("--allow-dirty",command)
+                self.assertIn("runnerless-capture",command)
+                env=kwargs["env"]
+                self.assertNotIn("CARGO_REGISTRY_TOKEN",env)
+                index=env["CARGO_REGISTRIES_RUNNERLESS_CAPTURE_INDEX"].removeprefix("sparse+")
+                # The selected crate is hidden locally even if already on crates.io.
+                with self.assertRaises(urllib.error.HTTPError) as missing:
+                    urllib.request.urlopen(index + capture.index_path("oci-zero"))
+                self.assertEqual(missing.exception.code,404)
+                missing.exception.close()
+                body=self.body(archive.read_bytes())
+                request=urllib.request.Request(index.removesuffix("/index/")+"/api/v1/crates/new",data=body,method="PUT",headers={"Authorization":env["CARGO_REGISTRIES_RUNNERLESS_CAPTURE_TOKEN"]})
+                with urllib.request.urlopen(request) as response:
+                    self.assertEqual(response.status,200)
+                return SimpleNamespace(returncode=0)
+            with patch.object(capture.subprocess,"run",side_effect=cargo), patch.object(capture.os,"environ",{"CARGO_REGISTRY_TOKEN":True}):
+                capture.capture("oci-zero","0.3.0",archive,output,5)
+            asset=output/"oci-zero-0.3.0.cargo-upload"
+            self.assertEqual(asset.read_bytes(),self.body(archive.read_bytes()))
+            self.assertEqual((output/"SHA256SUMS").read_text(),hashlib.sha256(asset.read_bytes()).hexdigest()+"  "+asset.name+"\n")
+
 
 if __name__ == "__main__":
     unittest.main()

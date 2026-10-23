@@ -207,7 +207,7 @@ jobs:
           cache-bin: false
       # Package together so Cargo can resolve unpublished workspace versions
       # from the packaged crates when verifying a release PR.
-      - name: Verify delegated Cargo publisher
+      - name: Verify Runnerless Cargo asset preparation
         run: python3 -m unittest discover -s tools -p test_runnerless_cargo_publish.py
       - name: Package published crates
         run: cargo package --locked -p gzip-zero -p zstd-zero -p oci-zero
