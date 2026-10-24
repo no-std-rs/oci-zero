@@ -1,2 +1,17 @@
-# Public CI uses GitHub-hosted runners; GPU comparisons are retired.
-actions: []
+actions:
+  - name: "BB safety probe / actual private pool"
+    self_hosted: true
+    pool: "linux-amd64-kvm"
+    timeout: 30s
+    git_fetch_depth: 1
+    resource_requests:
+      cpu: 1
+      memory: "1GB"
+      disk: "2GB"
+    triggers:
+      pull_request:
+        branches: ["main"]
+        merge_with_base: false
+    steps:
+      - run: |
+          printf '%s\n' 'BB_SAFETY_MARKER_ae82c4acba7f'
