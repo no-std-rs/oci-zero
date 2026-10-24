@@ -1,6 +1,7 @@
 actions:
-  - name: "BB safety probe / hosted"
-    self_hosted: false
+  - name: "BB safety probe / self-hosted"
+    self_hosted: true
+    pool: "bb-safety-nonexistent-5e39d128baa9"
     timeout: 30s
     triggers:
       pull_request:
