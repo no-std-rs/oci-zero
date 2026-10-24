@@ -2,6 +2,9 @@ actions:
   - name: "BB safety probe / actual private pool"
     self_hosted: true
     pool: "linux-amd64-kvm"
+    platform_properties:
+      workload-isolation-type: "none"
+      container-image: "none"
     timeout: 30s
     git_fetch_depth: 1
     resource_requests:
