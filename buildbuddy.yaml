@@ -1,19 +1,2 @@
-actions:
-  - name: "BB safety probe / added-config"
-    self_hosted: false
-    timeout: 30s
-    triggers:
-      pull_request:
-        branches: ["*"]
-        merge_with_base: false
-    steps:
-      - run: |
-          set -eu
-          printf '%s\n' 'BB_SAFETY_MARKER_5e39d128baa9'
-          for name in BUILDBUDDY_API_KEY REPO_TOKEN GH_TOKEN GITHUB_TOKEN; do
-            if printenv "$name" >/dev/null 2>&1; then
-              printf '%s=present\n' "$name"
-            else
-              printf '%s=absent\n' "$name"
-            fi
-          done
+# Public CI uses GitHub-hosted runners; GPU comparisons are retired.
+actions: []
